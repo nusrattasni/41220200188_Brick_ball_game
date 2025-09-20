@@ -3,7 +3,6 @@
 #include <cmath>
 #include <cstdio>
 
-
 const int windowWidth = 800;
 const int windowHeight = 600;
 
@@ -15,13 +14,18 @@ float ballX = 400, ballY = 300, ballRadius = 10;
 float ballDX = 4, ballDY = 4;
 
 // Bricks
-const int brickRows = 5, brickCols = 10;
+int brickRows = 5, brickCols = 10;
 float brickWidth = 70, brickHeight = 20;
-std::vector<std::vector<bool>> bricks(brickRows, std::vector<bool>(brickCols, true));
+std::vector<std::vector<int>> bricks; // health: 0 = broken, 1 = weak, 2 = medium, 3 = strong
 
 bool gameOver = false;
 int score = 0;
 int lives = 3;
+int level = 1;
+
+void initBricks() {
+    bricks.assign(brickRows, std::vector<int>(brickCols, 3)); // every brick starts with 3 hits
+}
 
 void drawRect(float x, float y, float width, float height) {
     glBegin(GL_QUADS);
@@ -48,8 +52,23 @@ void drawText(float x, float y, const char* str) {
     }
 }
 
+void drawBackground() {
+    glBegin(GL_QUADS);
+        glColor3f(0.05f, 0.05f, 0.2f); // bottom dark blue
+        glVertex2f(0, 0);
+        glVertex2f(windowWidth, 0);
+
+        glColor3f(0.2f, 0.2f, 0.5f); // top lighter blue
+        glVertex2f(windowWidth, windowHeight);
+        glVertex2f(0, windowHeight);
+    glEnd();
+}
+
 void display() {
     glClear(GL_COLOR_BUFFER_BIT);
+
+    // Draw background
+    drawBackground();
 
     // Paddle color changes with lives
     if (lives == 3) glColor3f(0, 1, 0);
@@ -57,15 +76,21 @@ void display() {
     else glColor3f(1, 0, 0);
     drawRect(paddleX, paddleY, paddleWidth, paddleHeight);
 
-    glColor3f(1, 1, 0); // Ball
+    // Ball
+    glColor3f(1, 1, 0);
     drawCircle(ballX, ballY, ballRadius);
 
-    // Bricks
+    // Bricks (all shades of red)
     for (int i = 0; i < brickRows; i++) {
         for (int j = 0; j < brickCols; j++) {
-            if (bricks[i][j]) {
-                glColor3f(1, 0.2f * i, 0.1f * j); // colorful
-                drawRect(j * (brickWidth + 10) + 35, i * (brickHeight + 10) + 400, brickWidth, brickHeight);
+            int health = bricks[i][j];
+            if (health > 0) {
+                if (health == 3) glColor3f(1, 0.0f, 0.0f);   // strong red
+                else if (health == 2) glColor3f(1, 0.4f, 0.4f); // medium red
+                else if (health == 1) glColor3f(1, 0.7f, 0.7f); // light red
+
+                drawRect(j * (brickWidth + 10) + 35, i * (brickHeight + 10) + 400,
+                         brickWidth, brickHeight);
             }
         }
     }
@@ -74,12 +99,17 @@ void display() {
     char scoreStr[30];
     sprintf(scoreStr, "Score: %d", score);
     glColor3f(1, 1, 1);
-    drawText(700, 570, scoreStr);
+    drawText(650, 570, scoreStr);
 
     // Display Lives
     char livesStr[30];
     sprintf(livesStr, "Lives: %d", lives);
     drawText(20, 570, livesStr);
+
+    // Display Level
+    char levelStr[30];
+    sprintf(levelStr, "Level: %d", level);
+    drawText(320, 570, levelStr);
 
     // Display Game Over or Win
     if (gameOver) {
@@ -114,14 +144,14 @@ void update(int value) {
         // Brick collision
         for (int i = 0; i < brickRows; i++) {
             for (int j = 0; j < brickCols; j++) {
-                if (bricks[i][j]) {
+                if (bricks[i][j] > 0) {
                     float bx = j * (brickWidth + 10) + 35;
                     float by = i * (brickHeight + 10) + 400;
                     if (ballX > bx && ballX < bx + brickWidth &&
                         ballY > by && ballY < by + brickHeight) {
-                        bricks[i][j] = false;
-                        ballDY *= -1.05f; // slightly increase speed
-                        score++;
+                        bricks[i][j]--; // reduce health
+                        ballDY *= -1.05f; // bounce & speed up slightly
+                        if (bricks[i][j] == 0) score++; // score only when destroyed
                     }
                 }
             }
@@ -135,20 +165,27 @@ void update(int value) {
             } else {
                 ballX = 400;
                 ballY = 300;
-                ballDX = 4;
-                ballDY = 4;
+                ballDX = 4 + level;
+                ballDY = 4 + level;
                 paddleX = 350;
             }
         }
 
-        // Win condition
+        // Win condition for a level
         bool allBricksBroken = true;
         for (int i = 0; i < brickRows; i++)
             for (int j = 0; j < brickCols; j++)
-                if (bricks[i][j]) allBricksBroken = false;
+                if (bricks[i][j] > 0) allBricksBroken = false;
 
         if (allBricksBroken) {
-            gameOver = true;
+            level++;
+            brickRows++; // add a row each level
+            ballDX = (ballDX > 0 ? 4 + level : -(4 + level));
+            ballDY = (ballDY > 0 ? 4 + level : -(4 + level));
+            ballX = 400;
+            ballY = 300;
+            paddleX = 350;
+            initBricks();
         }
     }
 
@@ -170,10 +207,9 @@ void keyboard(unsigned char key, int x, int y) {
         score = 0;
         lives = 3;
         gameOver = false;
-
-        for (int i = 0; i < brickRows; i++)
-            for (int j = 0; j < brickCols; j++)
-                bricks[i][j] = true;
+        level = 1;
+        brickRows = 5;
+        initBricks();
 
         glutPostRedisplay();
         glutTimerFunc(16, update, 0);
@@ -190,13 +226,14 @@ void init() {
     glClearColor(0.1f, 0.1f, 0.2f, 1.0f);
     glMatrixMode(GL_PROJECTION);
     gluOrtho2D(0, windowWidth, 0, windowHeight);
+    initBricks();
 }
 
 int main(int argc, char** argv) {
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(windowWidth, windowHeight);
-    glutCreateWindow("Brick Breaker");
+    glutCreateWindow("Brick Breaker with Levels + Brick Durability");
 
     init();
     glutDisplayFunc(display);
